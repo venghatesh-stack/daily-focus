@@ -90,4 +90,31 @@ with st.form("daily_form"):
 
         tasks[slot]["task"] = c2.text_input(
             "Task",
-            valu
+            value=tasks[slot]["task"],
+            key=f"task_{slot}",
+            label_visibility="collapsed"
+        )
+
+        tasks[slot]["status"] = c3.selectbox(
+            "Status",
+            STATUSES,
+            index=STATUSES.index(tasks[slot]["status"]),
+            key=f"status_{slot}",
+            label_visibility="collapsed"
+        )
+
+    col1, col2 = st.columns(2)
+    save = col1.form_submit_button("💾 Save")
+    cancel = col2.form_submit_button("❌ Cancel")
+
+# ==============================
+# ACTIONS
+# ==============================
+if save:
+    save_tasks(selected_date, tasks)
+    st.session_state.tasks = load_tasks(selected_date)
+    st.success("Saved")
+
+if cancel:
+    st.session_state.tasks = load_tasks(selected_date)
+    st.info("Changes discarded")
