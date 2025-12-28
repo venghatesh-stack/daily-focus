@@ -102,6 +102,7 @@ def save_tasks_to_db(task_date, tasks):
                     status
                 ))
 
+
 # ==============================
 # CACHE DB LOADS (PER DATE)
 # ==============================
@@ -196,4 +197,5 @@ with col_cancel:
                 del st.session_state[key]
 
         st.info("Changes discarded")
+
 
