@@ -12,7 +12,25 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 @st.cache_resource
 def get_connection():
-    return psycopg2.connect(DATABASE_URL,sslmode="require")
+    result = urlparse(DATABASE_URL)
+
+    return psycopg2.connect(
+        dbname=result.path[1:],
+        user=result.username,
+        password=result.password,
+        host=result.hostname,
+        port=result.port,
+        sslmode="require",
+        options="-c statement_timeout=5000"
+    )
+
+import os
+import psycopg2
+import streamlit as st
+from urllib.parse import urlparse
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
 
 def init_db():
     conn = get_connection()
@@ -64,4 +82,5 @@ conn.commit()
 cur.close()
 
 st.success("Saved automatically ✅")
+
 
