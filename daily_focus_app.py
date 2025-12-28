@@ -44,38 +44,10 @@ def init_db():
                     task_date DATE NOT NULL,
                     slot INTEGER NOT NULL,
                     task TEXT NOT NULL,
-                    status TEXT NOT NULL,
+                    task_status TEXT NOT NULL,
                     UNIQUE (task_date, slot)
                 );
             """)
-def on_date_change():
-    selected = st.session_state.date_picker
-
-    # Clear widget state to prevent bleed
-    for key in list(st.session_state.keys()):
-        if key.startswith("task_") or key.startswith("status_"):
-            del st.session_state[key]
-
-    # Load DB data for the new date
-    if selected not in st.session_state.tasks_by_date:
-        st.session_state.tasks_by_date[selected] = cached_load_tasks(selected)
-
-
-# Initialize containers once
-if "tasks_by_date" not in st.session_state:
-    st.session_state.tasks_by_date = {}
-
-if "date_picker" not in st.session_state:
-    st.session_state.date_picker = date.today()
-
-# Date picker (THIS owns the value)
-st.date_input(
-    "Select day",
-    key="date_picker",
-    on_change=on_date_change
-)
-
-selected_date = st.session_state.date_picker
 
 
 def load_tasks_from_db(task_date):
@@ -89,16 +61,17 @@ def load_tasks_from_db(task_date):
             """, (task_date,))
             rows = cur.fetchall()
 
+    # Defaults for all 48 slots
     data = {
         slot: {"task": DEFAULT_TASK, "status": DEFAULT_STATUS}
         for slot in range(1, TOTAL_SLOTS + 1)
     }
 
+    # Override with DB data
     for slot, task, status in rows:
         data[slot] = {"task": task, "status": status}
 
     return data
-
 
 
 def save_tasks_to_db(task_date, tasks):
@@ -128,8 +101,6 @@ def save_tasks_to_db(task_date, tasks):
                     status
                 ))
 
-
-
 # ==============================
 # CACHE DB LOADS (PER DATE)
 # ==============================
@@ -142,6 +113,42 @@ def cached_load_tasks(task_date):
 # ==============================
 init_db()
 
+# ==============================
+# DATE HANDLING (STABLE, NO SNAP-BACK)
+# ==============================
+def on_date_change():
+    selected = st.session_state.date_picker
+
+    # Clear widget state to prevent bleed
+    for key in list(st.session_state.keys()):
+        if key.startswith("task_") or key.startswith("status_"):
+            del st.session_state[key]
+
+    # Always load data for the date
+    st.session_state.tasks_by_date[selected] = cached_load_tasks(selected)
+
+
+# Initialize session containers
+if "tasks_by_date" not in st.session_state:
+    st.session_state.tasks_by_date = {}
+
+if "date_picker" not in st.session_state:
+    st.session_state.date_picker = date.today()
+
+# Date picker owns the value
+st.date_input(
+    "Select day",
+    key="date_picker",
+    on_change=on_date_change
+)
+
+selected_date = st.session_state.date_picker
+
+# Ensure tasks exist for first render
+if selected_date not in st.session_state.tasks_by_date:
+    st.session_state.tasks_by_date[selected_date] = cached_load_tasks(selected_date)
+
+tasks = st.session_state.tasks_by_date[selected_date]
 
 # ==============================
 # TIME SLOT LABEL
@@ -195,12 +202,9 @@ with col_cancel:
     if st.button("❌ Cancel"):
         st.session_state.tasks_by_date[selected_date] = cached_load_tasks(selected_date)
 
+        # Clear widget state so UI refreshes
         for key in list(st.session_state.keys()):
             if key.startswith("task_") or key.startswith("status_"):
                 del st.session_state[key]
 
         st.info("Changes discarded")
-
-
-
-
