@@ -200,7 +200,8 @@ with col_cancel:
        for key in list(st.session_state.keys()):
             if key.startswith("task_") or key.startswith("status_"):
                 del st.session_state[key]
-        st.info("Changes discarded")
+    st.info("Changes discarded")
+
 
 
 
