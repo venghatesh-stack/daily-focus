@@ -1,7 +1,7 @@
 import os
 import psycopg2
 import streamlit as st
-from datetime import date
+from datetime import date, datetime, timedelta
 
 # ==============================
 # PAGE SETUP
@@ -14,6 +14,14 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     st.error("DATABASE_URL is not set in Streamlit Secrets.")
     st.stop()
+
+# ==============================
+# CONSTANTS
+# ==============================
+TOTAL_SLOTS = 48
+DEFAULT_TASK = "Not Planned"
+DEFAULT_STATUS = "Not Planned"
+STATUSES = ["Not Planned", "Planned", "In Progress", "Done"]
 
 # ==============================
 # DATABASE HELPERS (POOLER SAFE)
@@ -44,6 +52,7 @@ def init_db():
 
 
 def load_tasks_from_db(task_date):
+    """Load tasks from DB. If none exist, return defaults."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -54,10 +63,13 @@ def load_tasks_from_db(task_date):
             """, (task_date,))
             rows = cur.fetchall()
 
-    data = {}
-    for slot in range(1, 6):
-        data[slot] = {"task": "", "status": "Not Started"}
+    # Default 48 slots
+    data = {
+        slot: {"task": DEFAULT_TASK, "status": DEFAULT_STATUS}
+        for slot in range(1, TOTAL_SLOTS + 1)
+    }
 
+    # Override with DB data if present
     for slot, task, status in rows:
         data[slot] = {"task": task, "status": status}
 
@@ -68,20 +80,19 @@ def save_tasks_to_db(task_date, tasks):
     with get_connection() as conn:
         with conn.cursor() as cur:
             for slot, data in tasks.items():
-                if data["task"].strip():
-                    cur.execute("""
-                        INSERT INTO daily_tasks (task_date, slot, task, status)
-                        VALUES (%s, %s, %s, %s)
-                        ON CONFLICT (task_date, slot)
-                        DO UPDATE SET
-                            task = EXCLUDED.task,
-                            status = EXCLUDED.status;
-                    """, (
-                        task_date,
-                        slot,
-                        data["task"].strip(),
-                        data["status"]
-                    ))
+                cur.execute("""
+                    INSERT INTO daily_tasks (task_date, slot, task, status)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (task_date, slot)
+                    DO UPDATE SET
+                        task = EXCLUDED.task,
+                        status = EXCLUDED.status;
+                """, (
+                    task_date,
+                    slot,
+                    data["task"],
+                    data["status"]
+                ))
 
 # ==============================
 # INIT
@@ -89,52 +100,56 @@ def save_tasks_to_db(task_date, tasks):
 init_db()
 
 # ==============================
-# SESSION STATE HELPERS
-# ==============================
-def load_date_into_state(task_date):
-    st.session_state.tasks = load_tasks_from_db(task_date)
-
-
-# ==============================
-# DATE PICKER
+# DATE HANDLING (CRITICAL)
 # ==============================
 selected_date = st.date_input(
     "Select day",
     value=st.session_state.get("selected_date", date.today())
 )
 
-# Detect date change
-if "selected_date" not in st.session_state:
+# Date change → reload from DB
+if st.session_state.get("selected_date") != selected_date:
     st.session_state.selected_date = selected_date
-    load_date_into_state(selected_date)
+    st.session_state.tasks = load_tasks_from_db(selected_date)
 
-elif selected_date != st.session_state.selected_date:
-    st.session_state.selected_date = selected_date
-    load_date_into_state(selected_date)
+# First load
+if "tasks" not in st.session_state:
+    st.session_state.tasks = load_tasks_from_db(selected_date)
+
+# ==============================
+# TIME SLOT LABELS
+# ==============================
+def slot_label(slot):
+    start = datetime.combine(date.today(), datetime.min.time()) + timedelta(minutes=(slot - 1) * 30)
+    end = start + timedelta(minutes=30)
+    return f"{start.strftime('%H:%M')} – {end.strftime('%H:%M')}"
 
 # ==============================
 # UI
 # ==============================
-st.subheader("Top 5 things for the day")
+st.subheader("Daily Plan (30-minute slots)")
 
-statuses = ["Not Started", "In Progress", "Done"]
+for slot in range(1, TOTAL_SLOTS + 1):
+    col_time, col_task, col_status = st.columns([2, 6, 2])
 
-for slot in range(1, 6):
-    col1, col2 = st.columns([4, 2])
+    with col_time:
+        st.markdown(f"**{slot_label(slot)}**")
 
-    with col1:
+    with col_task:
         st.session_state.tasks[slot]["task"] = st.text_input(
-            f"Task {slot}",
+            "Task",
             value=st.session_state.tasks[slot]["task"],
-            key=f"task_{slot}"
+            key=f"task_{selected_date}_{slot}",
+            label_visibility="collapsed"
         )
 
-    with col2:
+    with col_status:
         st.session_state.tasks[slot]["status"] = st.selectbox(
             "Status",
-            statuses,
-            index=statuses.index(st.session_state.tasks[slot]["status"]),
-            key=f"status_{slot}"
+            STATUSES,
+            index=STATUSES.index(st.session_state.tasks[slot]["status"]),
+            key=f"status_{selected_date}_{slot}",
+            label_visibility="collapsed"
         )
 
 st.divider()
@@ -142,15 +157,14 @@ st.divider()
 # ==============================
 # ACTION BUTTONS
 # ==============================
-col_save, col_cancel = st.columns([1, 1])
+col_save, col_cancel = st.columns(2)
 
 with col_save:
-    if st.button("💾 Save", type="primary"):
+    if st.button("💾 Save Day", type="primary"):
         save_tasks_to_db(selected_date, st.session_state.tasks)
-        st.success("Saved successfully ✅")
+        st.success("Day saved successfully ✅")
 
 with col_cancel:
     if st.button("❌ Cancel"):
-        load_date_into_state(selected_date)
+        st.session_state.tasks = load_tasks_from_db(selected_date)
         st.info("Changes discarded")
-
