@@ -12,29 +12,13 @@ st.title("🗓️ Daily Focus")
 # ---------- DATABASE ----------
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+
 @st.cache_resource
 def get_connection():
-    result = urlparse(DATABASE_URL)
-
-    # 🔥 Force IPv4 (CRITICAL FIX)
-    ipv4_address = socket.gethostbyname(result.hostname)
-
     return psycopg2.connect(
-        dbname=result.path[1:],
-        user=result.username,
-        password=result.password,
-        hostaddr=ipv4_address,   # <-- forces IPv4
-        host=result.hostname,
-        port=result.port,
-        sslmode="require",
+        os.getenv("DATABASE_URL"),
+        sslmode="require"
     )
-
-import os
-import psycopg2
-import streamlit as st
-from urllib.parse import urlparse
-
-DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 def init_db():
@@ -87,6 +71,7 @@ conn.commit()
 cur.close()
 
 st.success("Saved automatically ✅")
+
 
 
 
