@@ -189,7 +189,7 @@ with col_save:
         save_tasks_to_db(selected_date, tasks)
 
         # Reload from DB to guarantee consistency
-       st.session_state.tasks_by_date[selected_date] = load_tasks_from_db(selected_date)
+        st.session_state.tasks_by_date[selected_date] = load_tasks_from_db(selected_date)
 
 
         st.success("Day saved successfully ✅")
@@ -204,5 +204,6 @@ with col_cancel:
                 del st.session_state[key]
 
         st.info("Changes discarded")
+
 
 
