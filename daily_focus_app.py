@@ -107,6 +107,9 @@ init_db()
 # ==============================
 # DATE HANDLING (CORRECT)
 # ==============================
+# ==============================
+# DATE HANDLING (CORRECT + STARTUP SAFE)
+# ==============================
 def on_date_change():
     selected = st.session_state.date_picker
 
@@ -119,13 +122,19 @@ def on_date_change():
     st.session_state.tasks_by_date[selected] = load_tasks_from_db(selected)
 
 
-# Init containers
-if "tasks_by_date" not in st.session_state:
-    st.session_state.tasks_by_date = {}
-
+# Init date picker value
 if "date_picker" not in st.session_state:
     st.session_state.date_picker = date.today()
 
+# Force initial DB load ONCE
+if "initial_load_done" not in st.session_state:
+    st.session_state.tasks_by_date = {}
+    st.session_state.tasks_by_date[st.session_state.date_picker] = load_tasks_from_db(
+        st.session_state.date_picker
+    )
+    st.session_state.initial_load_done = True
+
+# Date picker widget
 st.date_input(
     "Select day",
     key="date_picker",
@@ -133,6 +142,7 @@ st.date_input(
 )
 
 selected_date = st.session_state.date_picker
+tasks = st.session_state.tasks_by_date[selected_date]
 
 # Ensure data exists for selected date
 if selected_date not in st.session_state.tasks_by_date:
@@ -211,6 +221,7 @@ with col_cancel:
                 del st.session_state[key]
 
         st.info("Changes discarded")
+
 
 
 
