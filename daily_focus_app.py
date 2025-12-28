@@ -10,7 +10,6 @@ st.set_page_config(page_title="Daily Focus", layout="wide")
 st.title("🗓️ Daily Focus")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-
 if not DATABASE_URL:
     st.error("DATABASE_URL is not set in Streamlit Secrets.")
     st.stop()
@@ -52,7 +51,6 @@ def init_db():
 
 
 def load_tasks_from_db(task_date):
-    """Load tasks from DB. If none exist, return defaults."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -69,7 +67,7 @@ def load_tasks_from_db(task_date):
         for slot in range(1, TOTAL_SLOTS + 1)
     }
 
-    # Override with DB data if present
+    # Override with DB values
     for slot, task, status in rows:
         data[slot] = {"task": task, "status": status}
 
@@ -95,29 +93,44 @@ def save_tasks_to_db(task_date, tasks):
                 ))
 
 # ==============================
+# CACHE DB LOADS (PER DATE)
+# ==============================
+@st.cache_data(show_spinner=False)
+def cached_load_tasks(task_date):
+    return load_tasks_from_db(task_date)
+
+# ==============================
 # INIT
 # ==============================
 init_db()
 
 # ==============================
-# DATE HANDLING (CRITICAL)
+# DATE HANDLING (FAST + SAFE)
 # ==============================
 selected_date = st.date_input(
     "Select day",
     value=st.session_state.get("selected_date", date.today())
 )
 
-# Date change → reload from DB
+# Clear widget state when date changes
 if st.session_state.get("selected_date") != selected_date:
     st.session_state.selected_date = selected_date
-    st.session_state.tasks = load_tasks_from_db(selected_date)
 
-# First load
-if "tasks" not in st.session_state:
-    st.session_state.tasks = load_tasks_from_db(selected_date)
+    for key in list(st.session_state.keys()):
+        if key.startswith("task_") or key.startswith("status_"):
+            del st.session_state[key]
+
+# Per-date task buffer
+if "tasks_by_date" not in st.session_state:
+    st.session_state.tasks_by_date = {}
+
+if selected_date not in st.session_state.tasks_by_date:
+    st.session_state.tasks_by_date[selected_date] = cached_load_tasks(selected_date)
+
+tasks = st.session_state.tasks_by_date[selected_date]
 
 # ==============================
-# TIME SLOT LABELS
+# TIME SLOT LABEL
 # ==============================
 def slot_label(slot):
     start = datetime.combine(date.today(), datetime.min.time()) + timedelta(minutes=(slot - 1) * 30)
@@ -136,18 +149,18 @@ for slot in range(1, TOTAL_SLOTS + 1):
         st.markdown(f"**{slot_label(slot)}**")
 
     with col_task:
-        st.session_state.tasks[slot]["task"] = st.text_input(
+        tasks[slot]["task"] = st.text_input(
             "Task",
-            value=st.session_state.tasks[slot]["task"],
+            value=tasks[slot]["task"],
             key=f"task_{selected_date}_{slot}",
             label_visibility="collapsed"
         )
 
     with col_status:
-        st.session_state.tasks[slot]["status"] = st.selectbox(
+        tasks[slot]["status"] = st.selectbox(
             "Status",
             STATUSES,
-            index=STATUSES.index(st.session_state.tasks[slot]["status"]),
+            index=STATUSES.index(tasks[slot]["status"]),
             key=f"status_{selected_date}_{slot}",
             label_visibility="collapsed"
         )
@@ -161,10 +174,15 @@ col_save, col_cancel = st.columns(2)
 
 with col_save:
     if st.button("💾 Save Day", type="primary"):
-        save_tasks_to_db(selected_date, st.session_state.tasks)
+        save_tasks_to_db(selected_date, tasks)
         st.success("Day saved successfully ✅")
 
 with col_cancel:
     if st.button("❌ Cancel"):
-        st.session_state.tasks = load_tasks_from_db(selected_date)
+        st.session_state.tasks_by_date[selected_date] = cached_load_tasks(selected_date)
+
+        for key in list(st.session_state.keys()):
+            if key.startswith("task_") or key.startswith("status_"):
+                del st.session_state[key]
+
         st.info("Changes discarded")
