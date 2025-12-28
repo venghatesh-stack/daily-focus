@@ -104,9 +104,8 @@ def save_tasks_to_db(task_date, tasks):
 # INIT
 # ==============================
 init_db()
-
 # ==============================
-# DATE HANDLING (NO SNAP-BACK)
+# DATE HANDLING (CORRECT)
 # ==============================
 def on_date_change():
     selected = st.session_state.date_picker
@@ -116,15 +115,16 @@ def on_date_change():
         if key.startswith("task_") or key.startswith("status_"):
             del st.session_state[key]
 
-    # Always reload from DB
-    st.session_state.tasks = load_tasks_from_db(selected)
+    # Load DB data for selected date
+    st.session_state.tasks_by_date[selected] = load_tasks_from_db(selected)
 
+
+# Init containers
+if "tasks_by_date" not in st.session_state:
+    st.session_state.tasks_by_date = {}
 
 if "date_picker" not in st.session_state:
     st.session_state.date_picker = date.today()
-
-if "tasks" not in st.session_state:
-    st.session_state.tasks = load_tasks_from_db(st.session_state.date_picker)
 
 st.date_input(
     "Select day",
@@ -133,7 +133,13 @@ st.date_input(
 )
 
 selected_date = st.session_state.date_picker
-tasks = st.session_state.tasks
+
+# Ensure data exists for selected date
+if selected_date not in st.session_state.tasks_by_date:
+    st.session_state.tasks_by_date[selected_date] = load_tasks_from_db(selected_date)
+
+tasks = st.session_state.tasks_by_date[selected_date]
+########################
 
 # ==============================
 # TIME SLOT LABEL
@@ -196,3 +202,4 @@ with col_cancel:
                 del st.session_state[key]
 
         st.info("Changes discarded")
+
