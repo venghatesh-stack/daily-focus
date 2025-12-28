@@ -183,6 +183,10 @@ st.divider()
 # ACTION BUTTONS
 # ==============================
 col_save, col_cancel = st.columns(2)
+# ==============================
+# ACTION BUTTONS
+# ==============================
+col_save, col_cancel = st.columns(2)
 
 with col_save:
     if st.button("💾 Save Day", type="primary"):
@@ -191,16 +195,24 @@ with col_save:
         # Reload from DB to guarantee consistency
         st.session_state.tasks_by_date[selected_date] = load_tasks_from_db(selected_date)
 
+        # Clear widget state so UI refreshes
+        for key in list(st.session_state.keys()):
+            if key.startswith("task_") or key.startswith("status_"):
+                del st.session_state[key]
 
-    st.success("Day saved successfully ✅")
+        st.success("Day saved successfully ✅")
 
 with col_cancel:
     if st.button("❌ Cancel"):
-       st.session_state.tasks_by_date[selected_date] = load_tasks_from_db(selected_date)
-       for key in list(st.session_state.keys()):
+        st.session_state.tasks_by_date[selected_date] = load_tasks_from_db(selected_date)
+
+        for key in list(st.session_state.keys()):
             if key.startswith("task_") or key.startswith("status_"):
                 del st.session_state[key]
-    st.info("Changes discarded")
+
+        st.info("Changes discarded")
+
+
 
 
 
