@@ -1,7 +1,9 @@
 import os
 import psycopg2
 import streamlit as st
+import socket
 from datetime import date
+from urllib.parse import urlparse
 
 # ---------- PAGE SETUP ----------
 st.set_page_config(page_title="Daily Focus", layout="wide")
@@ -14,14 +16,17 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 def get_connection():
     result = urlparse(DATABASE_URL)
 
+    # 🔥 Force IPv4 (CRITICAL FIX)
+    ipv4_address = socket.gethostbyname(result.hostname)
+
     return psycopg2.connect(
         dbname=result.path[1:],
         user=result.username,
         password=result.password,
+        hostaddr=ipv4_address,   # <-- forces IPv4
         host=result.hostname,
         port=result.port,
         sslmode="require",
-        options="-c statement_timeout=5000"
     )
 
 import os
@@ -82,5 +87,6 @@ conn.commit()
 cur.close()
 
 st.success("Saved automatically ✅")
+
 
 
