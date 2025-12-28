@@ -9,9 +9,6 @@ from datetime import date
 st.set_page_config(page_title="Daily Focus", layout="wide")
 st.title("🗓️ Daily Focus")
 
-# ==============================
-# DATABASE CONFIG
-# ==============================
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
@@ -19,73 +16,63 @@ if not DATABASE_URL:
     st.stop()
 
 
-@st.cache_resource
+# ==============================
+# DATABASE HELPERS (NO CACHING)
+# ==============================
 def get_connection():
-    """
-    Cached connection for Streamlit Cloud.
-    Works correctly with Supabase Shared Pooler (IPv4).
-    """
     conn = psycopg2.connect(
         DATABASE_URL,
-        sslmode="require"
+        sslmode="require",
+        connect_timeout=5
     )
     conn.autocommit = True
     return conn
 
 
 def init_db():
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS daily_tasks (
-            id SERIAL PRIMARY KEY,
-            task_date DATE NOT NULL,
-            slot INTEGER NOT NULL,
-            task TEXT NOT NULL,
-            status TEXT NOT NULL,
-            UNIQUE (task_date, slot)
-        );
-    """)
-
-    cur.close()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS daily_tasks (
+                    id SERIAL PRIMARY KEY,
+                    task_date DATE NOT NULL,
+                    slot INTEGER NOT NULL,
+                    task TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    UNIQUE (task_date, slot)
+                );
+            """)
 
 
 def save_task(task_date, slot, task, status):
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        INSERT INTO daily_tasks (task_date, slot, task, status)
-        VALUES (%s, %s, %s, %s)
-        ON CONFLICT (task_date, slot)
-        DO UPDATE SET
-            task = EXCLUDED.task,
-            status = EXCLUDED.status;
-    """, (task_date, slot, task, status))
-
-    cur.close()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO daily_tasks (task_date, slot, task, status)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (task_date, slot)
+                DO UPDATE SET
+                    task = EXCLUDED.task,
+                    status = EXCLUDED.status;
+            """, (task_date, slot, task, status))
 
 
 def load_tasks(task_date):
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT slot, task, status
-        FROM daily_tasks
-        WHERE task_date = %s
-        ORDER BY slot;
-    """, (task_date,))
-
-    rows = cur.fetchall()
-    cur.close()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT slot, task, status
+                FROM daily_tasks
+                WHERE task_date = %s
+                ORDER BY slot;
+            """, (task_date,))
+            rows = cur.fetchall()
 
     return {slot: {"task": task, "status": status} for slot, task, status in rows}
 
 
 # ==============================
-# INITIALIZE DATABASE
+# INIT
 # ==============================
 init_db()
 
@@ -93,11 +80,9 @@ init_db()
 # UI
 # ==============================
 selected_date = st.date_input("Select day", value=date.today())
-
 st.subheader("Top 5 things for the day")
 
 statuses = ["Not Started", "In Progress", "Done"]
-
 existing_data = load_tasks(selected_date)
 
 for slot in range(1, 6):
