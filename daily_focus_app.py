@@ -193,14 +193,23 @@ st.divider()
 # ==============================
 col_save, col_cancel = st.columns(2)
 
-with col_save:
-    if st.button("💾 Save Day", type="primary"):
-        save_tasks_to_db(selected_date, tasks)
-        st.success("Day saved successfully ✅")
+if st.button("💾 Save Day", type="primary"):
+    save_tasks_to_db(selected_date, tasks)
+
+    # 🔥 CRITICAL: clear cache so fresh DB data loads
+    cached_load_tasks.clear()
+
+    # Reload fresh data from DB
+    st.session_state.tasks_by_date[selected_date] = cached_load_tasks(selected_date)
+
+    st.success("Day saved successfully ✅")
+
 
 with col_cancel:
     if st.button("❌ Cancel"):
+        cached_load_tasks.clear()
         st.session_state.tasks_by_date[selected_date] = cached_load_tasks(selected_date)
+
 
         # Clear widget state so UI refreshes
         for key in list(st.session_state.keys()):
@@ -208,3 +217,4 @@ with col_cancel:
                 del st.session_state[key]
 
         st.info("Changes discarded")
+
