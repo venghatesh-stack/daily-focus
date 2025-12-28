@@ -197,13 +197,11 @@ with col_save:
 with col_cancel:
     if st.button("❌ Cancel"):
        st.session_state.tasks_by_date[selected_date] = load_tasks_from_db(selected_date)
-
-
-        for key in list(st.session_state.keys()):
+       for key in list(st.session_state.keys()):
             if key.startswith("task_") or key.startswith("status_"):
                 del st.session_state[key]
-
         st.info("Changes discarded")
+
 
 
 
