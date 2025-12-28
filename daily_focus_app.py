@@ -48,6 +48,34 @@ def init_db():
                     UNIQUE (task_date, slot)
                 );
             """)
+def on_date_change():
+    selected = st.session_state.date_picker
+
+    # Clear widget state to prevent bleed
+    for key in list(st.session_state.keys()):
+        if key.startswith("task_") or key.startswith("status_"):
+            del st.session_state[key]
+
+    # Load DB data for the new date
+    if selected not in st.session_state.tasks_by_date:
+        st.session_state.tasks_by_date[selected] = cached_load_tasks(selected)
+
+
+# Initialize containers once
+if "tasks_by_date" not in st.session_state:
+    st.session_state.tasks_by_date = {}
+
+if "date_picker" not in st.session_state:
+    st.session_state.date_picker = date.today()
+
+# Date picker (THIS owns the value)
+st.date_input(
+    "Select day",
+    key="date_picker",
+    on_change=on_date_change
+)
+
+selected_date = st.session_state.date_picker
 
 
 def load_tasks_from_db(task_date):
@@ -114,30 +142,6 @@ def cached_load_tasks(task_date):
 # ==============================
 init_db()
 
-# ==============================
-# DATE HANDLING (FAST + SAFE)
-# ==============================
-selected_date = st.date_input(
-    "Select day",
-    value=st.session_state.get("selected_date", date.today())
-)
-
-# Clear widget state when date changes
-if st.session_state.get("selected_date") != selected_date:
-    st.session_state.selected_date = selected_date
-
-    for key in list(st.session_state.keys()):
-        if key.startswith("task_") or key.startswith("status_"):
-            del st.session_state[key]
-
-# Per-date task buffer
-if "tasks_by_date" not in st.session_state:
-    st.session_state.tasks_by_date = {}
-
-if selected_date not in st.session_state.tasks_by_date:
-    st.session_state.tasks_by_date[selected_date] = cached_load_tasks(selected_date)
-
-tasks = st.session_state.tasks_by_date[selected_date]
 
 # ==============================
 # TIME SLOT LABEL
@@ -196,6 +200,7 @@ with col_cancel:
                 del st.session_state[key]
 
         st.info("Changes discarded")
+
 
 
 
