@@ -11,60 +11,36 @@ st.title("🗓️ Daily Focus")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    st.error("DATABASE_URL is not set in Streamlit Secrets.")
+    st.error("DATABASE_URL is not set")
     st.stop()
 
-# ==============================
-# CONSTANTS
-# ==============================
 TOTAL_SLOTS = 48
 DEFAULT_TASK = "Not Planned"
 DEFAULT_STATUS = "Not Planned"
 STATUSES = ["Not Planned", "Planned", "In Progress", "Done"]
 
 # ==============================
-# DATABASE HELPERS (POOLER SAFE)
+# DB
 # ==============================
 def get_connection():
-    conn = psycopg2.connect(
-        DATABASE_URL,
-        sslmode="require",
-        connect_timeout=5
-    )
+    conn = psycopg2.connect(DATABASE_URL, sslmode="require")
     conn.autocommit = True
     return conn
 
 
-def init_db():
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS daily_tasks (
-                    id SERIAL PRIMARY KEY,
-                    task_date DATE NOT NULL,
-                    slot INTEGER NOT NULL,
-                    task TEXT NOT NULL,
-                    task_status TEXT NOT NULL,
-                    UNIQUE (task_date, slot)
-                );
-            """)
-
-
-def load_tasks_from_db(task_date):
-    """Always load fresh data from DB"""
+def load_tasks(task_date):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT slot, task, task_status
                 FROM daily_tasks
                 WHERE task_date = %s
-                ORDER BY slot;
             """, (task_date,))
             rows = cur.fetchall()
 
     data = {
-        slot: {"task": DEFAULT_TASK, "status": DEFAULT_STATUS}
-        for slot in range(1, TOTAL_SLOTS + 1)
+        i: {"task": DEFAULT_TASK, "status": DEFAULT_STATUS}
+        for i in range(1, TOTAL_SLOTS + 1)
     }
 
     for slot, task, status in rows:
@@ -73,160 +49,45 @@ def load_tasks_from_db(task_date):
     return data
 
 
-def save_tasks_to_db(task_date, tasks):
+def save_tasks(task_date, tasks):
     with get_connection() as conn:
         with conn.cursor() as cur:
-            for slot, data in tasks.items():
-                task = data.get("task")
-                status = data.get("status")
-
-                # Skip defaults
-                if not task or not status:
+            for slot, v in tasks.items():
+                if v["task"] == DEFAULT_TASK and v["status"] == DEFAULT_STATUS:
                     continue
-                if task == DEFAULT_TASK and status == DEFAULT_STATUS:
-                    continue
-
                 cur.execute("""
                     INSERT INTO daily_tasks (task_date, slot, task, task_status)
                     VALUES (%s, %s, %s, %s)
                     ON CONFLICT (task_date, slot)
                     DO UPDATE SET
                         task = EXCLUDED.task,
-                        task_status = EXCLUDED.task_status;
-                """, (
-                    task_date,
-                    slot,
-                    task,
-                    status
-                ))
+                        task_status = EXCLUDED.task_status
+                """, (task_date, slot, v["task"], v["status"]))
+
 
 # ==============================
-# INIT
+# DATE
 # ==============================
-init_db()
-# ==============================
-# DATE HANDLING (CORRECT)
-# ==============================
-# ==============================
-# DATE HANDLING (CORRECT + STARTUP SAFE)
-# ==============================
-def on_date_change():
-    selected = st.session_state.date_picker
+selected_date = st.date_input("Select day", date.today())
 
-    # Clear widget state
-    for key in list(st.session_state.keys()):
-        if key.startswith("task_") or key.startswith("status_"):
-            del st.session_state[key]
+if "tasks" not in st.session_state or st.session_state.get("loaded_date") != selected_date:
+    st.session_state.tasks = load_tasks(selected_date)
+    st.session_state.loaded_date = selected_date
 
-    # Load DB data for selected date
-    st.session_state.tasks_by_date[selected] = load_tasks_from_db(selected)
-
-
-# Init date picker value
-if "date_picker" not in st.session_state:
-    st.session_state.date_picker = date.today()
-
-# Force initial DB load ONCE
-if "initial_load_done" not in st.session_state:
-    st.session_state.tasks_by_date = {}
-    st.session_state.tasks_by_date[st.session_state.date_picker] = load_tasks_from_db(
-        st.session_state.date_picker
-    )
-    st.session_state.initial_load_done = True
-
-# Date picker widget
-st.date_input(
-    "Select day",
-    key="date_picker",
-    on_change=on_date_change
-)
-
-selected_date = st.session_state.date_picker
-tasks = st.session_state.tasks_by_date[selected_date]
-
-# Ensure data exists for selected date
-if selected_date not in st.session_state.tasks_by_date:
-    st.session_state.tasks_by_date[selected_date] = load_tasks_from_db(selected_date)
-
-tasks = st.session_state.tasks_by_date[selected_date]
-########################
+tasks = st.session_state.tasks
 
 # ==============================
-# TIME SLOT LABEL
+# FORM (THIS IS THE FIX)
 # ==============================
-def slot_label(slot):
-    start = datetime.combine(date.today(), datetime.min.time()) + timedelta(minutes=(slot - 1) * 30)
-    end = start + timedelta(minutes=30)
-    return f"{start.strftime('%H:%M')} – {end.strftime('%H:%M')}"
+with st.form("daily_form"):
+    for slot in range(1, TOTAL_SLOTS + 1):
+        c1, c2, c3 = st.columns([2, 6, 2])
 
-# ==============================
-# UI
-# ==============================
-st.subheader("Daily Plan (30-minute slots)")
+        start = (datetime.min + timedelta(minutes=(slot - 1) * 30)).time()
+        end = (datetime.min + timedelta(minutes=slot * 30)).time()
 
-for slot in range(1, TOTAL_SLOTS + 1):
-    col_time, col_task, col_status = st.columns([2, 6, 2])
+        c1.write(f"{start.strftime('%H:%M')}–{end.strftime('%H:%M')}")
 
-    with col_time:
-        st.markdown(f"**{slot_label(slot)}**")
-
-    with col_task:
-        tasks[slot]["task"] = st.text_input(
+        tasks[slot]["task"] = c2.text_input(
             "Task",
-            value=tasks[slot]["task"],
-            key=f"task_{selected_date}_{slot}",
-            label_visibility="collapsed"
-        )
-
-    with col_status:
-        tasks[slot]["status"] = st.selectbox(
-            "Status",
-            STATUSES,
-            index=STATUSES.index(tasks[slot]["status"]),
-            key=f"status_{selected_date}_{slot}",
-            label_visibility="collapsed"
-        )
-
-st.divider()
-
-# ==============================
-# ACTION BUTTONS
-# ==============================
-col_save, col_cancel = st.columns(2)
-# ==============================
-# ACTION BUTTONS
-# ==============================
-col_save, col_cancel = st.columns(2)
-
-with col_save:
-    if st.button("💾 Save Day", type="primary"):
-        save_tasks_to_db(selected_date, tasks)
-
-        # Reload from DB to guarantee consistency
-        st.session_state.tasks_by_date[selected_date] = load_tasks_from_db(selected_date)
-
-        # Clear widget state so UI refreshes
-        for key in list(st.session_state.keys()):
-            if key.startswith("task_") or key.startswith("status_"):
-                del st.session_state[key]
-
-        st.success("Day saved successfully ✅")
-
-with col_cancel:
-    if st.button("❌ Cancel"):
-        st.session_state.tasks_by_date[selected_date] = load_tasks_from_db(selected_date)
-
-        for key in list(st.session_state.keys()):
-            if key.startswith("task_") or key.startswith("status_"):
-                del st.session_state[key]
-
-        st.info("Changes discarded")
-
-
-
-
-
-
-
-
-
+            valu
