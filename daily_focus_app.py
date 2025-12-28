@@ -51,6 +51,7 @@ def init_db():
 
 
 def load_tasks_from_db(task_date):
+    """Always load fresh data from DB"""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -61,13 +62,11 @@ def load_tasks_from_db(task_date):
             """, (task_date,))
             rows = cur.fetchall()
 
-    # Defaults for all 48 slots
     data = {
         slot: {"task": DEFAULT_TASK, "status": DEFAULT_STATUS}
         for slot in range(1, TOTAL_SLOTS + 1)
     }
 
-    # Override with DB data
     for slot, task, status in rows:
         data[slot] = {"task": task, "status": status}
 
@@ -81,7 +80,7 @@ def save_tasks_to_db(task_date, tasks):
                 task = data.get("task")
                 status = data.get("status")
 
-                # Skip defaults / invalid rows
+                # Skip defaults
                 if not task or not status:
                     continue
                 if task == DEFAULT_TASK and status == DEFAULT_STATUS:
@@ -102,40 +101,31 @@ def save_tasks_to_db(task_date, tasks):
                 ))
 
 # ==============================
-# CACHE DB LOADS (PER DATE)
-# ==============================
-@st.cache_data(show_spinner=False)
-def cached_load_tasks(task_date):
-    return load_tasks_from_db(task_date)
-
-# ==============================
 # INIT
 # ==============================
 init_db()
 
 # ==============================
-# DATE HANDLING (STABLE, NO SNAP-BACK)
+# DATE HANDLING (NO SNAP-BACK)
 # ==============================
 def on_date_change():
     selected = st.session_state.date_picker
 
-    # Clear widget state to prevent bleed
+    # Clear widget state
     for key in list(st.session_state.keys()):
         if key.startswith("task_") or key.startswith("status_"):
             del st.session_state[key]
 
-    # Always load data for the date
-    st.session_state.tasks_by_date[selected] = cached_load_tasks(selected)
+    # Always reload from DB
+    st.session_state.tasks = load_tasks_from_db(selected)
 
-
-# Initialize session containers
-if "tasks_by_date" not in st.session_state:
-    st.session_state.tasks_by_date = {}
 
 if "date_picker" not in st.session_state:
     st.session_state.date_picker = date.today()
 
-# Date picker owns the value
+if "tasks" not in st.session_state:
+    st.session_state.tasks = load_tasks_from_db(st.session_state.date_picker)
+
 st.date_input(
     "Select day",
     key="date_picker",
@@ -143,12 +133,7 @@ st.date_input(
 )
 
 selected_date = st.session_state.date_picker
-
-# Ensure tasks exist for first render
-if selected_date not in st.session_state.tasks_by_date:
-    st.session_state.tasks_by_date[selected_date] = cached_load_tasks(selected_date)
-
-tasks = st.session_state.tasks_by_date[selected_date]
+tasks = st.session_state.tasks
 
 # ==============================
 # TIME SLOT LABEL
@@ -193,28 +178,21 @@ st.divider()
 # ==============================
 col_save, col_cancel = st.columns(2)
 
-if st.button("💾 Save Day", type="primary"):
-    save_tasks_to_db(selected_date, tasks)
+with col_save:
+    if st.button("💾 Save Day", type="primary"):
+        save_tasks_to_db(selected_date, tasks)
 
-    # 🔥 CRITICAL: clear cache so fresh DB data loads
-    cached_load_tasks.clear()
+        # Reload from DB to guarantee consistency
+        st.session_state.tasks = load_tasks_from_db(selected_date)
 
-    # Reload fresh data from DB
-    st.session_state.tasks_by_date[selected_date] = cached_load_tasks(selected_date)
-
-    st.success("Day saved successfully ✅")
-
+        st.success("Day saved successfully ✅")
 
 with col_cancel:
     if st.button("❌ Cancel"):
-        cached_load_tasks.clear()
-        st.session_state.tasks_by_date[selected_date] = cached_load_tasks(selected_date)
+        st.session_state.tasks = load_tasks_from_db(selected_date)
 
-
-        # Clear widget state so UI refreshes
         for key in list(st.session_state.keys()):
             if key.startswith("task_") or key.startswith("status_"):
                 del st.session_state[key]
 
         st.info("Changes discarded")
-
