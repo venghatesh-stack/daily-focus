@@ -43,7 +43,7 @@ def init_db():
             """)
 
 
-def load_tasks(task_date):
+def load_tasks_from_db(task_date):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -54,10 +54,17 @@ def load_tasks(task_date):
             """, (task_date,))
             rows = cur.fetchall()
 
-    return {slot: {"task": task, "status": status} for slot, task, status in rows}
+    data = {}
+    for slot in range(1, 6):
+        data[slot] = {"task": "", "status": "Not Started"}
+
+    for slot, task, status in rows:
+        data[slot] = {"task": task, "status": status}
+
+    return data
 
 
-def save_all_tasks(task_date, tasks):
+def save_tasks_to_db(task_date, tasks):
     with get_connection() as conn:
         with conn.cursor() as cur:
             for slot, data in tasks.items():
@@ -82,46 +89,68 @@ def save_all_tasks(task_date, tasks):
 init_db()
 
 # ==============================
+# SESSION STATE HELPERS
+# ==============================
+def load_date_into_state(task_date):
+    st.session_state.tasks = load_tasks_from_db(task_date)
+
+
+# ==============================
+# DATE PICKER
+# ==============================
+selected_date = st.date_input(
+    "Select day",
+    value=st.session_state.get("selected_date", date.today())
+)
+
+# Detect date change
+if "selected_date" not in st.session_state:
+    st.session_state.selected_date = selected_date
+    load_date_into_state(selected_date)
+
+elif selected_date != st.session_state.selected_date:
+    st.session_state.selected_date = selected_date
+    load_date_into_state(selected_date)
+
+# ==============================
 # UI
 # ==============================
-selected_date = st.date_input("Select day", value=date.today())
 st.subheader("Top 5 things for the day")
 
 statuses = ["Not Started", "In Progress", "Done"]
-existing_data = load_tasks(selected_date)
-
-tasks_to_save = {}
 
 for slot in range(1, 6):
     col1, col2 = st.columns([4, 2])
 
     with col1:
-        task = st.text_input(
+        st.session_state.tasks[slot]["task"] = st.text_input(
             f"Task {slot}",
-            value=existing_data.get(slot, {}).get("task", ""),
-            key=f"task_{selected_date}_{slot}"
+            value=st.session_state.tasks[slot]["task"],
+            key=f"task_{slot}"
         )
 
     with col2:
-        status = st.selectbox(
+        st.session_state.tasks[slot]["status"] = st.selectbox(
             "Status",
             statuses,
-            index=statuses.index(
-                existing_data.get(slot, {}).get("status", "Not Started")
-            ),
-            key=f"status_{selected_date}_{slot}"
+            index=statuses.index(st.session_state.tasks[slot]["status"]),
+            key=f"status_{slot}"
         )
-
-    tasks_to_save[slot] = {
-        "task": task,
-        "status": status
-    }
 
 st.divider()
 
 # ==============================
-# SAVE BUTTON
+# ACTION BUTTONS
 # ==============================
-if st.button("💾 Save Day", type="primary"):
-    save_all_tasks(selected_date, tasks_to_save)
-    st.success("Day saved successfully ✅")
+col_save, col_cancel = st.columns([1, 1])
+
+with col_save:
+    if st.button("💾 Save", type="primary"):
+        save_tasks_to_db(selected_date, st.session_state.tasks)
+        st.success("Saved successfully ✅")
+
+with col_cancel:
+    if st.button("❌ Cancel"):
+        load_date_into_state(selected_date)
+        st.info("Changes discarded")
+
