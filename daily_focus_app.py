@@ -1,38 +1,49 @@
 import os
 import psycopg2
 import streamlit as st
-import socket
 from datetime import date
-from urllib.parse import urlparse
 
-# ---------- PAGE SETUP ----------
+# ==============================
+# PAGE SETUP
+# ==============================
 st.set_page_config(page_title="Daily Focus", layout="wide")
 st.title("🗓️ Daily Focus")
 
-# ---------- DATABASE ----------
+# ==============================
+# DATABASE CONFIG
+# ==============================
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    st.error("DATABASE_URL is not set in Streamlit Secrets.")
+    st.stop()
 
 
 @st.cache_resource
 def get_connection():
-    return psycopg2.connect(
-        os.getenv("DATABASE_URL"),
+    """
+    Cached connection for Streamlit Cloud.
+    Works correctly with Supabase Shared Pooler (IPv4).
+    """
+    conn = psycopg2.connect(
+        DATABASE_URL,
         sslmode="require"
     )
+    conn.autocommit = True
+    return conn
 
 
 def init_db():
     conn = get_connection()
-    conn.autocommit = True
     cur = conn.cursor()
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS daily_tasks (
             id SERIAL PRIMARY KEY,
             task_date DATE NOT NULL,
-            slot INT NOT NULL,
-            task TEXT,
-            status TEXT,
+            slot INTEGER NOT NULL,
+            task TEXT NOT NULL,
+            status TEXT NOT NULL,
             UNIQUE (task_date, slot)
         );
     """)
@@ -40,10 +51,8 @@ def init_db():
     cur.close()
 
 
-init_db()
 def save_task(task_date, slot, task, status):
     conn = get_connection()
-    conn.autocommit = True
     cur = conn.cursor()
 
     cur.execute("""
@@ -57,39 +66,61 @@ def save_task(task_date, slot, task, status):
 
     cur.close()
 
-# ---------- UI ----------
+
+def load_tasks(task_date):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT slot, task, status
+        FROM daily_tasks
+        WHERE task_date = %s
+        ORDER BY slot;
+    """, (task_date,))
+
+    rows = cur.fetchall()
+    cur.close()
+
+    return {slot: {"task": task, "status": status} for slot, task, status in rows}
+
+
+# ==============================
+# INITIALIZE DATABASE
+# ==============================
+init_db()
+
+# ==============================
+# UI
+# ==============================
 selected_date = st.date_input("Select day", value=date.today())
 
 st.subheader("Top 5 things for the day")
 
 statuses = ["Not Started", "In Progress", "Done"]
 
-conn = get_connection()
-cur = conn.cursor()
+existing_data = load_tasks(selected_date)
 
 for slot in range(1, 6):
-    col1, col2 = st.columns([3, 1])
+    col1, col2 = st.columns([4, 2])
 
-    task = st.text_input(
-        f"Task {slot}",
-        key=f"task_{selected_date}_{slot}"
-    )
+    with col1:
+        task = st.text_input(
+            f"Task {slot}",
+            value=existing_data.get(slot, {}).get("task", ""),
+            key=f"task_{selected_date}_{slot}"
+        )
 
-    status = st.selectbox(
-        "Status",
-        ["Not Started", "In Progress", "Done"],
-        key=f"status_{selected_date}_{slot}"
-    )
+    with col2:
+        status = st.selectbox(
+            "Status",
+            statuses,
+            index=statuses.index(
+                existing_data.get(slot, {}).get("status", "Not Started")
+            ),
+            key=f"status_{selected_date}_{slot}"
+        )
 
     if task.strip():
-        save_task(selected_date, slot, task, status)
-
-conn.commit()
-cur.close()
+        save_task(selected_date, slot, task.strip(), status)
 
 st.success("Saved automatically ✅")
-
-
-
-
-
