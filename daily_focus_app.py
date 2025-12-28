@@ -78,6 +78,16 @@ def save_tasks_to_db(task_date, tasks):
     with get_connection() as conn:
         with conn.cursor() as cur:
             for slot, data in tasks.items():
+                task = data.get("task")
+                status = data.get("status")
+
+                # 🔒 Skip unplanned / invalid rows
+                if not task or not status:
+                    continue
+
+                if task == DEFAULT_TASK and status == DEFAULT_STATUS:
+                    continue
+
                 cur.execute("""
                     INSERT INTO daily_tasks (task_date, slot, task, status)
                     VALUES (%s, %s, %s, %s)
@@ -88,8 +98,8 @@ def save_tasks_to_db(task_date, tasks):
                 """, (
                     task_date,
                     slot,
-                    data["task"],
-                    data["status"]
+                    task,
+                    status
                 ))
 
 # ==============================
@@ -186,3 +196,4 @@ with col_cancel:
                 del st.session_state[key]
 
         st.info("Changes discarded")
+
