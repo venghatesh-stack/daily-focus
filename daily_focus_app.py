@@ -54,24 +54,23 @@ def load_tasks_from_db(task_date):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT slot, task, status
+                SELECT slot, task, task_status
                 FROM daily_tasks
                 WHERE task_date = %s
                 ORDER BY slot;
             """, (task_date,))
             rows = cur.fetchall()
 
-    # Default 48 slots
     data = {
         slot: {"task": DEFAULT_TASK, "status": DEFAULT_STATUS}
         for slot in range(1, TOTAL_SLOTS + 1)
     }
 
-    # Override with DB values
     for slot, task, status in rows:
         data[slot] = {"task": task, "status": status}
 
     return data
+
 
 
 def save_tasks_to_db(task_date, tasks):
@@ -81,26 +80,26 @@ def save_tasks_to_db(task_date, tasks):
                 task = data.get("task")
                 status = data.get("status")
 
-                # 🔒 Skip unplanned / invalid rows
+                # Skip defaults / invalid rows
                 if not task or not status:
                     continue
-
                 if task == DEFAULT_TASK and status == DEFAULT_STATUS:
                     continue
 
                 cur.execute("""
-                    INSERT INTO daily_tasks (task_date, slot, task, status)
+                    INSERT INTO daily_tasks (task_date, slot, task, task_status)
                     VALUES (%s, %s, %s, %s)
                     ON CONFLICT (task_date, slot)
                     DO UPDATE SET
                         task = EXCLUDED.task,
-                        status = EXCLUDED.status;
+                        task_status = EXCLUDED.task_status;
                 """, (
                     task_date,
                     slot,
                     task,
                     status
                 ))
+
 
 
 # ==============================
@@ -197,5 +196,6 @@ with col_cancel:
                 del st.session_state[key]
 
         st.info("Changes discarded")
+
 
 
